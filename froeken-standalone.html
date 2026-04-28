@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Fröken Selfoss – Travel Agency Group Quote</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #fff; }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+// ─── PASTE YOUR GOOGLE SHEET URLS HERE WHEN READY ───────────────────────────
+const SHEET_CONFIG = {
+  menus:    "",
+  extras:   "",
+  settings: "",
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
+const APPETIZERS = [
+  {id:"salmon",  label:"Hot smoked salmon on Icelandic flatbread"},
+  {id:"reindeer",label:"Reindeer carpaccio with sorrel & ruccola pesto, Grettir cheese"},
+  {id:"soup",    label:"Seafood soup, sea truffle cream & sourdough bread"},
+  {id:"veganApp",label:"Vegan: Deep-fried broccoli tempura, sesame vinaigrette & sesame seeds", vegan:true},
+];
+const MAINS = [
+  {id:"steak",    label:"Steak dinner (selection changes — check online menu)"},
+  {id:"char",     label:"Pan-fried Arctic char, roasted vegetables"},
+  {id:"veganMain",label:"Vegan: Wellington vegetable roast, Greenway chunks, roasted vegetables & sesame sauce", vegan:true},
+];
+const DINNER_DESSERTS = [
+  {id:"cake",        label:"Chocolate cake, skyr ganache, caramel, and wild bilberries"},
+  {id:"veganDessert",label:"Vegan: Warm rhubarb & apple crumble, caramelized oats, cream ice cream & berries", vegan:true},
+];
+const UPGRADE_PRICE = 1100;
+
+const FALLBACK_MENUS = [
+  {id:"d1", category:"dinner", label:"Menu #1 – Two Course Dinner",       price:9990,  desc:"Whole group chooses: Appetiser + Main OR Main + Dessert"},
+  {id:"d2", category:"dinner", label:"Menu #2 – Three Course Dinner",     price:11990, desc:"Appetiser + Main + Dessert for all"},
+  {id:"d3", category:"dinner", label:"Menu #3 – Soup & Fish",             price:6390,  desc:"Soup of the day + fish of the day"},
+  {id:"d4", category:"dinner", label:"Menu #4 – Lobster Fantasy",         price:14990, desc:"Seafood soup, Atlantic lobster, lava cake"},
+  {id:"d5", category:"dinner", label:"Menu #5 – Timeless Iceland Tastes", price:15990, desc:"Shared appetizers & mains, plated dessert"},
+  {id:"d6", category:"dinner", label:"Menu #6 – 7 Course Tasting Menu",   price:14990, desc:"Full tasting experience"},
+  {id:"l1", category:"lunch",  label:"Menu #1 – Soup & Fish",             price:4490,  desc:"Soup of the day + fish of the day"},
+  {id:"l2", category:"lunch",  label:"Menu #2 – Main & Dessert",          price:3990,  desc:"À la carte main (each guest chooses) + complimentary lava cake for all", variablePrice:true},
+  {id:"l3a",category:"lunch",  label:"Menu #3 – Soup Buffet (Soup of Day)",price:2990, desc:"Free refills included"},
+  {id:"l3b",category:"lunch",  label:"Menu #3 – Soup Buffet (Traditional)",price:4390, desc:"Icelandic lamb or seafood soup"},
+  {id:"l4", category:"lunch",  label:"Menu #4 – Icelandic Menu (4 Course)",price:7990, desc:"Icelandic platter, goat tartare, slow-cooked lamb, skyr"},
+  {id:"l5", category:"lunch",  label:"Menu #5 – Two Course",              price:6990,  desc:"Appetiser + Main — upgrade to 3 courses with dessert for 1,100 kr/person"},
+  {id:"l6", category:"lunch",  label:"Menu #6 – Luxury Brunch Buffet",    price:7290,  desc:"Extravagant buffet (children's discounts apply)"},
+];
+const FALLBACK_EXTRAS = [
+  {id:"wine2",   type:"drink",   label:"2 Bottles House Wine",           price:11990},
+  {id:"beer5",   type:"drink",   label:"5 Bottles House Beer",           price:4990},
+  {id:"soft5",   type:"drink",   label:"5 Soft Drinks",                  price:1990},
+  {id:"prosecco",type:"drink",   label:"0% Kylie Minogue Rosé Prosecco", price:4990},
+  {id:"v_beer",  type:"voucher", label:"Draft Beer & Bottled Cider",     price:999},
+  {id:"v_wine",  type:"voucher", label:"Glass of House Wine",            price:1499},
+  {id:"v_soft",  type:"voucher", label:"Soft Drinks",                    price:390},
+  {id:"cake",    type:"addon",   label:"Birthday Cake (serves 6–10)",    price:7990, note:"Chocolate mousse layer cake"},
+];
+const FALLBACK_SETTINGS = {
+  discount_weekday:0.13, discount_weekend:0.10,
+  free_meal_min_guests:12, free_meal_base:1,
+  free_meal_next_threshold:20, free_meal_next_base:2,
+  free_meal_increment:10, min_group_size:10,
+};
+
+const ISK = n => new Intl.NumberFormat("is-IS").format(Math.round(n))+" kr.";
+const quoteRef = "FS-"+Date.now().toString(36).toUpperCase().slice(-6);
+const iS = {border:"1px solid #e5e7eb",borderRadius:5,padding:"5px 8px",fontSize:13,width:"100%",boxSizing:"border-box",outline:"none",background:"#fff"};
+const thS = r => ({padding:"8px 10px",fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:.5,background:"#f9fafb",borderBottom:"1px solid #e5e7eb",textAlign:r?"right":"left"});
+const tdS = (r,b) => ({padding:"8px 10px",fontSize:b?14:13,fontWeight:b?800:400,borderBottom:"1px solid #f3f4f6",textAlign:r?"right":"left",fontVariantNumeric:"tabular-nums"});
+const LBL = ({t}) => React.createElement("div",{style:{fontSize:12,color:"#6b7280",marginBottom:3}},t);
+const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+async function fetchSheet(url){
+  if(!url)return null;
+  try{const r=await fetch(url);if(!r.ok)return null;const d=Papa.parse(await r.text(),{header:true,skipEmptyLines:true,dynamicTyping:true});return d.data;}
+  catch{return null;}
+}
+const parseMenus=rows=>rows.filter(r=>String(r.active).toUpperCase()!=="FALSE").map(r=>({id:String(r.id||"").trim(),category:String(r.category||"").trim(),label:String(r.label||"").trim(),price:parseFloat(r.price)||0,desc:String(r.desc||"").trim()}));
+const parseExtras=rows=>rows.filter(r=>String(r.active).toUpperCase()!=="FALSE").map(r=>({id:String(r.id||"").trim(),type:String(r.type||"").trim(),label:String(r.label||"").trim(),price:parseFloat(r.price)||0,note:String(r.note||"").trim()}));
+const parseSettings=rows=>{const s={...FALLBACK_SETTINGS};rows.forEach(r=>{if(r.key&&r.value!==undefined)s[String(r.key).trim()]=parseFloat(r.value);});return s;};
+const getDiscount=(date,s)=>{if(!date)return null;const d=new Date(date+"T12:00:00").getDay();return d===5||d===6?{rate:s.discount_weekend,label:"Friday/Saturday",color:"#d97706"}:{rate:s.discount_weekday,label:"Sun–Thursday",color:"#16a34a"};};
+const freeMeals=(n,s)=>{if(n<s.free_meal_min_guests)return 0;if(n<s.free_meal_next_threshold)return s.free_meal_base;return s.free_meal_next_base+Math.floor((n-s.free_meal_next_threshold)/s.free_meal_increment);};
+const mkCourse=()=>({d1CourseType:"appetiser",salmon:0,reindeer:0,soup:0,veganApp:0,steak:0,char:0,veganMain:0,cake:0,veganDessert:0});
+
+const Stepper=({val,onChange,max,vegan})=>(
+  <div style={{display:"flex",alignItems:"center",border:`1px solid ${vegan?"#bbf7d0":"#d1d5db"}`,borderRadius:6,overflow:"hidden",background:vegan?"#f0fdf4":"#fff",width:110,flexShrink:0}}>
+    <button onClick={()=>onChange(Math.max(0,val-1))} style={{padding:"4px 10px",border:"none",background:"transparent",cursor:"pointer",fontSize:15,fontWeight:700,borderRight:`1px solid ${vegan?"#bbf7d0":"#e5e7eb"}`}}>−</button>
+    <span style={{flex:1,textAlign:"center",fontSize:14,fontWeight:700}}>{val}</span>
+    <button onClick={()=>onChange(max!=null?Math.min(max,val+1):val+1)} style={{padding:"4px 10px",border:"none",background:"transparent",cursor:"pointer",fontSize:15,fontWeight:700,borderLeft:`1px solid ${vegan?"#bbf7d0":"#e5e7eb"}`}}>+</button>
+  </div>
+);
+const CourseLine=({item,val,onChange,max})=>(
+  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
+    <div style={{flex:1}}>
+      <span style={{fontSize:12,color:item.vegan?"#166534":"#374151"}}>{item.label}</span>
+      {item.vegan&&<span style={{marginLeft:6,fontSize:10,background:"#dcfce7",color:"#166534",padding:"1px 5px",borderRadius:10,fontWeight:600}}>vegan</span>}
+    </div>
+    <Stepper val={val} onChange={onChange} max={max} vegan={item.vegan}/>
+  </div>
+);
+const SectionHeader=({label,count,target})=>{
+  const ok=count===target,over=count>target;
+  return(
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,marginTop:12}}>
+      <div style={{fontWeight:600,fontSize:12,color:"#374151"}}>{label}</div>
+      <div style={{fontSize:11,fontWeight:700,color:ok?"#166534":over?"#dc2626":"#9ca3af"}}>{count}/{target} {ok?"✓":over?"⚠ over":""}</div>
+    </div>
+  );
+};
+
+function App(){
+  const[tab,setTab]=useState("quote");
+  const[menus,setMenus]=useState(FALLBACK_MENUS);
+  const[extras,setExtras]=useState(FALLBACK_EXTRAS);
+  const[settings,setSettings]=useState(FALLBACK_SETTINGS);
+  const[dataSource,setDataSource]=useState("fallback");
+  const[agency,setAgency]=useState("");
+  const[contact,setContact]=useState("");
+  const[tourRef2,setTourRef2]=useState("");
+  const[date,setDate]=useState("");
+  const[time,setTime]=useState("");
+  const[mealType,setMealType]=useState("dinner");
+  const[menuId,setMenuId]=useState("d2");
+  const[adults,setAdults]=useState(12);
+  const[ch511,setCh511]=useState(0);
+  const[ch04,setCh04]=useState(0);
+  const[addDessert,setAddDessert]=useState(false);
+  const[dessertPax,setDessertPax]=useState("");
+  const[drinksQty,setDrinksQty]=useState({});
+  const[vouchersQty,setVouchersQty]=useState({});
+  const[cakeEnabled,setCakeEnabled]=useState(false);
+  const[allergy,setAllergy]=useState("");
+  const[notes,setNotes]=useState("");
+  const[course,setCourse]=useState(mkCourse());
+  const[upgEnabled,setUpgEnabled]=useState(false);
+
+  useEffect(()=>{
+    const has=SHEET_CONFIG.menus||SHEET_CONFIG.extras||SHEET_CONFIG.settings;
+    if(!has)return;
+    Promise.all([fetchSheet(SHEET_CONFIG.menus),fetchSheet(SHEET_CONFIG.extras),fetchSheet(SHEET_CONFIG.settings)]).then(([m,e,s])=>{
+      let live=false;
+      if(m&&m.length){setMenus(parseMenus(m));live=true;}
+      if(e&&e.length){setExtras(parseExtras(e));live=true;}
+      if(s&&s.length){setSettings(parseSettings(s));live=true;}
+      setDataSource(live?"live":"fallback");
+    });
+  },[]);
+
+  const dinnerMenus=menus.filter(m=>m.category==="dinner");
+  const lunchMenus =menus.filter(m=>m.category==="lunch");
+  const curMenus   =mealType==="dinner"?dinnerMenus:lunchMenus;
+  const sel        =curMenus.find(m=>m.id===menuId)||curMenus[0]||{id:"",label:"",price:0,desc:""};
+
+  const drinkItems  =extras.filter(e=>e.type==="drink");
+  const voucherItems=extras.filter(e=>e.type==="voucher");
+  const cakeItem    =extras.find(e=>e.id==="cake");
+
+  const showCourses   =["d1","d2","l5"].includes(sel.id);
+  const showUpgrade   =["d3","l1","l5"].includes(sel.id);
+  const isD1          =sel.id==="d1";
+  const isVariableMenu=sel.variablePrice===true;
+  const childrenAllowed=sel.id==="l6";
+
+  const total    =adults+ch511+ch04;
+  const qualifies=total>=(settings.min_group_size||10);
+  const disc     =getDiscount(date,settings);
+  const rate     =qualifies?(disc?disc.rate:settings.discount_weekday):0;
+  const discLabel=disc?disc.label:"Sun–Thu (default — select date to confirm)";
+  const freePax  =childrenAllowed?adults:total;
+  const free     =freeMeals(freePax,settings);
+
+  const adultBase=adults*sel.price;
+  const childBase=childrenAllowed?ch511*sel.price*0.5:ch511*sel.price;
+  const ch04cost =childrenAllowed?0:ch04*sel.price;
+  const base     =adultBase+childBase+ch04cost;
+  const discAmt  =base*rate;
+  const afterDisc=base-discAmt;
+  const freeVal  =free*sel.price*(1-rate);
+
+  const dinnerG  =adults+(childrenAllowed?ch511:ch511)+(!childrenAllowed?ch04:0);
+  const upgPaxN  =upgEnabled?dinnerG:0;
+  const upgTotal =upgPaxN*UPGRADE_PRICE;
+
+  const showGenDessert=mealType==="lunch"&&!["l1","l5"].includes(sel.id);
+  const dpax        =addDessert&&showGenDessert?(parseInt(dessertPax)||adults+(childrenAllowed?ch511:0)):0;
+  const dessertTotal=dpax*1100;
+  const drinksTotal =drinkItems.reduce((s,d)=>s+(drinksQty[d.id]||0)*d.price,0);
+  const vouchTotal  =voucherItems.reduce((s,v)=>s+(vouchersQty[v.id]||0)*v.price,0);
+  const cakeTotal   =cakeEnabled?(cakeItem&&cakeItem.price)||7990:0;
+  const addOns      =dessertTotal+drinksTotal+vouchTotal+cakeTotal+upgTotal;
+  const grand       =afterDisc+addOns;
+
+  const appSum    =course.salmon+course.reindeer+course.soup+course.veganApp;
+  const mainSum   =course.steak+course.char+course.veganMain;
+  const dessertSum=course.cake+course.veganDessert;
+  const appValid  =isD1?(course.d1CourseType==="appetiser"?appSum===dinnerG:true):appSum===dinnerG;
+  const mainValid =showCourses?mainSum===dinnerG:true;
+  const desValid  =sel.id==="d2"?dessertSum===dinnerG:true;
+  const courseFilled=showCourses&&appValid&&mainValid&&desValid;
+
+  const upC=(f,v)=>setCourse(p=>({...p,[f]:Math.max(0,v)}));
+  const resetMenu=()=>{setCourse(mkCourse());setUpgEnabled(false);};
+  const timeWarn=()=>{if(!time)return null;const[h,m]=time.split(":").map(Number);return h*60+m>=18*60+30&&h*60+m<=20*60;};
+  const setDrinkQty=(id,q)=>setDrinksQty(p=>({...p,[id]:Math.max(0,q)}));
+  const setVouchQty=(id,q)=>setVouchersQty(p=>({...p,[id]:Math.max(0,q)}));
+
+  const TabBtn=({id,lbl})=>(
+    <button onClick={()=>setTab(id)} style={{padding:"9px 16px",border:"none",cursor:"pointer",fontSize:14,fontWeight:tab===id?700:400,color:tab===id?"#111827":"#6b7280",background:"none",borderBottom:tab===id?"2px solid #111827":"2px solid transparent",whiteSpace:"nowrap"}}>{lbl}</button>
+  );
+  const Row=({l,v,green,bold})=>(
+    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:bold?14:13,fontWeight:bold?800:400,borderBottom:"1px solid #f3f4f6",color:green?"#166534":"inherit"}}>
+      <span>{l}</span><span style={{fontVariantNumeric:"tabular-nums"}}>{v}</span>
+    </div>
+  );
+
+  const buildCourseHTML=()=>{
+    let html="";
+    if(showCourses){
+      const hasApp=!isD1||(isD1&&course.d1CourseType==="appetiser");
+      const hasDes=sel.id==="d2"||(isD1&&course.d1CourseType==="dessert");
+      const appRows=APPETIZERS.filter(a=>course[a.id]>0).map(a=>`<tr><td style="padding:4px 8px 4px 20px;color:${a.vegan?"#166534":"#111"}">${a.label}${a.vegan?" <em>(vegan)</em>":""}</td><td style="text-align:right;padding:4px 8px">${course[a.id]} guest${course[a.id]>1?"s":""}</td></tr>`).join("");
+      const mainRows=MAINS.filter(m=>course[m.id]>0).map(m=>`<tr><td style="padding:4px 8px 4px 20px;color:${m.vegan?"#166534":"#111"}">${m.label}${m.vegan?" <em>(vegan)</em>":""}</td><td style="text-align:right;padding:4px 8px">${course[m.id]} guest${course[m.id]>1?"s":""}</td></tr>`).join("");
+      const desRows=DINNER_DESSERTS.filter(d=>course[d.id]>0).map(d=>`<tr><td style="padding:4px 8px 4px 20px;color:${d.vegan?"#166534":"#111"}">${d.label}${d.vegan?" <em>(vegan)</em>":""}</td><td style="text-align:right;padding:4px 8px">${course[d.id]} guest${course[d.id]>1?"s":""}</td></tr>`).join("");
+      html+=`<h2>Course Selections — ${sel.label}</h2>
+      ${isD1?`<p style="font-size:12px;color:#666;margin-bottom:10px">Group course type: <strong>${course.d1CourseType==="appetiser"?"Appetiser + Main":"Main + Dessert"}</strong></p>`:""}
+      <table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>
+      ${hasApp?`<tr><td colspan="2" style="padding:6px 8px;font-weight:700;background:#f5f5f5;border-bottom:1px solid #ccc">Appetiser (${dinnerG} guests)</td></tr>${appRows||'<tr><td colspan="2" style="padding:4px 8px;color:#888;font-style:italic">Not filled in</td></tr>'}`:``}
+      <tr><td colspan="2" style="padding:6px 8px;font-weight:700;background:#f5f5f5;border-bottom:1px solid #ccc">Main Course (${dinnerG} guests)</td></tr>
+      ${mainRows||'<tr><td colspan="2" style="padding:4px 8px;color:#888;font-style:italic">Not filled in</td></tr>'}
+      ${hasDes?`<tr><td colspan="2" style="padding:6px 8px;font-weight:700;background:#f5f5f5;border-bottom:1px solid #ccc">Dessert (${dinnerG} guests)</td></tr>${desRows||'<tr><td colspan="2" style="padding:4px 8px;color:#888;font-style:italic">Not filled in</td></tr>'}`:``}
+      </tbody></table>`;
+    }
+    if(showUpgrade&&upgEnabled){
+      html+=`<h2>Dessert Upgrade — +${ISK(UPGRADE_PRICE)}/person</h2>
+      <p style="font-size:12px;color:#666;">All ${dinnerG} guests · Brownie, brown sugar caramel, skyr ganache &amp; berries</p>`;
+    }
+    return html;
+  };
+
+  const exportQuote=()=>{
+    const dayName=date?DAYS[new Date(date+"T12:00:00").getDay()]:"";
+    const drinksRows=drinkItems.filter(d=>(drinksQty[d.id]||0)>0).map(d=>`<tr><td>${d.label}</td><td>${drinksQty[d.id]}</td><td style="text-align:right">${ISK(d.price)}</td><td style="text-align:right">${ISK((drinksQty[d.id]||0)*d.price)}</td></tr>`).join("");
+    const vouchRows=voucherItems.filter(v=>(vouchersQty[v.id]||0)>0).map(v=>`<tr><td>${v.label} vouchers</td><td>${vouchersQty[v.id]}</td><td style="text-align:right">${ISK(v.price)}/voucher</td><td style="text-align:right">${ISK((vouchersQty[v.id]||0)*v.price)}</td></tr>`).join("");
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Group Booking ${quoteRef}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Georgia,serif;color:#111;padding:40px;font-size:13px;line-height:1.6}h1{font-size:24px;font-weight:bold}h2{font-size:14px;font-weight:bold;margin:24px 0 8px;padding-bottom:4px;border-bottom:2px solid #111}.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;margin-bottom:24px;padding-bottom:16px}.tot{font-size:26px;font-weight:bold}.info{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;background:#f5f5f5;border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:20px;font-size:12px}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px}th{text-align:left;padding:6px 8px;background:#f5f5f5;border-bottom:2px solid #ccc;font-size:11px;text-transform:uppercase}td{padding:6px 8px;border-bottom:1px solid #eee}tfoot td{font-weight:bold;background:#f5f5f5;border-top:2px solid #ccc}.note{background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:12px;margin-top:24px;font-size:11px;color:#92400e;line-height:1.7}.free{background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px;margin:12px 0;font-size:12px;color:#166534}.footer{margin-top:32px;padding-top:16px;border-top:1px solid #ccc;font-size:11px;color:#888;text-align:center}</style></head><body>
+<div class="hdr"><div><h1>Fröken Selfoss</h1><p style="color:#666;font-size:12px">Travel Agency Group Booking · <strong>${quoteRef}</strong></p>
+<p style="margin-top:6px;font-size:12px"><strong>Date:</strong> ${date?`${dayName}, ${new Date(date+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}`:""} ${time?"at "+time:""}</p>
+<p style="font-size:11px;color:#888">Generated: ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</p></div>
+<div style="text-align:right"><p style="font-size:11px;color:#666">${isVariableMenu?"Est. Minimum":"Group Total"} (incl. VAT)</p><div class="tot">${isVariableMenu?"from ":""}${ISK(grand)}</div>
+${rate>0?`<p style="font-size:12px;color:#166534;margin-top:4px">Group discount saved: <strong>${ISK(discAmt)}</strong></p>`:""}
+${free>0?`<p style="font-size:12px;color:#166534">Complimentary meals: <strong>${free} included</strong></p>`:""}</div></div>
+${agency||contact||tourRef2?`<div class="info">${agency?`<div><strong>Agency</strong><br>${agency}</div>`:""}${contact?`<div><strong>Contact</strong><br>${contact}</div>`:""}${tourRef2?`<div><strong>Tour Ref</strong><br>${tourRef2}</div>`:""}
+<div><strong>Group Size</strong><br>${total} guests</div></div>`:""}
+<h2>Pricing Summary</h2>
+<table><thead><tr><th>Item</th><th>Pax</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Amount</th></tr></thead><tbody>
+${adults>0?`<tr><td>${sel.label} – Adults</td><td>${adults}</td><td style="text-align:right">${isVariableMenu?"from ":""}${ISK(sel.price)}</td><td style="text-align:right">${isVariableMenu?"from ":""}${ISK(adultBase)}</td></tr>`:""}
+${ch511>0?`<tr><td>${sel.label} – Children 5–11 ${childrenAllowed?"(50% off)":"(full price)"}</td><td>${ch511}</td><td style="text-align:right">${ISK(childrenAllowed?sel.price*0.5:sel.price)}</td><td style="text-align:right">${ISK(childBase)}</td></tr>`:""}
+${ch04>0?`<tr style="color:${childrenAllowed?"#166534":"inherit"}"><td>${sel.label} – Children 0–4 ${childrenAllowed?"(complimentary)":"(full price)"}</td><td>${ch04}</td><td style="text-align:right">${childrenAllowed?"FREE":ISK(sel.price)}</td><td style="text-align:right">${childrenAllowed?"—":ISK(ch04*sel.price)}</td></tr>`:""}
+${rate>0?`<tr style="color:#166534"><td>Group discount – ${discLabel} (${(rate*100).toFixed(0)}%)</td><td></td><td></td><td style="text-align:right">−${ISK(discAmt)}</td></tr>`:""}
+${upgEnabled&&upgPaxN>0?`<tr><td>Dessert upgrade (3rd course)</td><td>${upgPaxN}</td><td style="text-align:right">${ISK(UPGRADE_PRICE)}</td><td style="text-align:right">${ISK(upgTotal)}</td></tr>`:""}
+${addDessert&&dpax>0?`<tr><td>Dessert add-on</td><td>${dpax}</td><td style="text-align:right">${ISK(1100)}</td><td style="text-align:right">${ISK(dessertTotal)}</td></tr>`:""}
+${drinksRows}${vouchRows}
+${cakeEnabled?`<tr><td>Birthday Cake (serves 6–10)</td><td>1</td><td style="text-align:right">${ISK((cakeItem&&cakeItem.price)||7990)}</td><td style="text-align:right">${ISK(cakeTotal)}</td></tr>`:""}
+</tbody><tfoot><tr><td colspan="3">${isVariableMenu?"Est. Minimum":"Grand Total"} (incl. VAT)</td><td style="text-align:right">${isVariableMenu?"from ":""}${ISK(grand)}</td></tr></tfoot></table>
+${free>0?`<div class="free">🎁 <strong>${free} complimentary driver/guide meal${free>1?"s":""} included</strong> for ${freePax} paying guests · Value: ${ISK(freeVal)}</div>`:""}
+${buildCourseHTML()}
+${allergy?`<h2>Dietary Requirements / Allergies</h2><p>${allergy}</p>`:""}
+${notes?`<h2>Notes</h2><p>${notes}</p>`:""}
+<div class="note"><strong>All prices include VAT.</strong> Final count and menu confirmed 24h before dining. Allergies notified 24h in advance. Preferred time: before 18:30 or after 20:00. Cancellations: minimum 6 hours notice.</div>
+<div class="footer">Fröken Selfoss · Selfoss, Iceland · #1 TripAdvisor South Iceland 2024 & 2025 · Quote ref: ${quoteRef}</div>
+<script>window.onload=function(){window.print();}<\/script></body></html>`;
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));
+    a.download=`froeken-group-booking-${quoteRef}.html`;document.body.appendChild(a);a.click();document.body.removeChild(a);
+  };
+
+  const DessertUpgradeBlock=({standalone})=>(
+    <div style={standalone?{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:14}:{marginTop:14,paddingTop:14,borderTop:"1px solid #e5e7eb"}}>
+      {standalone&&<div style={{fontWeight:700,fontSize:13,marginBottom:12}}>Add dessert — upgrade to 3 courses <span style={{fontWeight:400,color:"#6b7280",fontSize:12}}>— {ISK(UPGRADE_PRICE)}/person</span></div>}
+      {!standalone&&<div style={{fontWeight:600,fontSize:13,marginBottom:10,color:"#374151"}}>Upgrade to 3 courses — add dessert <span style={{fontWeight:400,color:"#6b7280",fontSize:12}}>— {ISK(UPGRADE_PRICE)}/person</span></div>}
+      <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,marginBottom:upgEnabled?10:0}}>
+        <input type="checkbox" checked={upgEnabled} onChange={e=>setUpgEnabled(e.target.checked)}/>
+        <span style={{fontWeight:600}}>Upgrade all {dinnerG} guests to 3 courses</span>
+        <span style={{color:"#9ca3af",fontSize:11}}>— Brownie, brown sugar caramel, skyr ganache & berries</span>
+      </label>
+      {upgEnabled&&<div style={{marginTop:8,background:"#f0fdf4",border:"1px solid #86efac",borderRadius:6,padding:"8px 10px",fontSize:12,color:"#166534"}}>
+        ✓ {dinnerG} guests × {ISK(UPGRADE_PRICE)} = <strong>{ISK(upgTotal)}</strong>
+      </div>}
+    </div>
+  );
+
+  const CourseSection=()=>{
+    if(!showCourses||!qualifies)return null;
+    const showApp=!isD1||(isD1&&course.d1CourseType==="appetiser");
+    const showDes=sel.id==="d2"||(isD1&&course.d1CourseType==="dessert");
+    return(
+      <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontWeight:700,fontSize:13}}>Course Selections — {sel.label}</div>
+          {courseFilled
+            ?<span style={{fontSize:11,color:"#166534",background:"#f0fdf4",border:"1px solid #86efac",borderRadius:20,padding:"2px 10px"}}>✓ Complete</span>
+            :<span style={{fontSize:11,color:"#92400e",background:"#fffbeb",border:"1px solid #fcd34d",borderRadius:20,padding:"2px 10px"}}>Fill in for PDF</span>}
+        </div>
+        {isD1&&(
+          <div style={{marginBottom:16,paddingBottom:16,borderBottom:"1px solid #e5e7eb"}}>
+            <div style={{fontWeight:600,fontSize:12,color:"#374151",marginBottom:8}}>Group course type — whole group gets the same combination</div>
+            <div style={{display:"flex",gap:8}}>
+              {[{v:"appetiser",l:"Appetiser + Main"},{v:"dessert",l:"Main + Dessert"}].map(o=>(
+                <button key={o.v} onClick={()=>setCourse(p=>({...mkCourse(),d1CourseType:o.v}))}
+                  style={{flex:1,padding:"10px 0",border:"1px solid",borderRadius:7,cursor:"pointer",fontSize:13,fontWeight:course.d1CourseType===o.v?700:400,
+                    background:course.d1CourseType===o.v?"#111827":"#fff",color:course.d1CourseType===o.v?"#fff":"#374151",
+                    borderColor:course.d1CourseType===o.v?"#111827":"#d1d5db"}}>{o.l}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {showApp&&(
+          <div style={{marginBottom:12,paddingBottom:12,borderBottom:"1px solid #e5e7eb"}}>
+            <SectionHeader label="Appetiser" count={appSum} target={dinnerG}/>
+            {APPETIZERS.map(a=><CourseLine key={a.id} item={a} val={course[a.id]} onChange={v=>upC(a.id,v)} max={dinnerG}/>)}
+          </div>
+        )}
+        <div style={{marginBottom:showDes||sel.id==="l5"?12:0,paddingBottom:showDes||sel.id==="l5"?12:0,borderBottom:showDes||sel.id==="l5"?"1px solid #e5e7eb":"none"}}>
+          <SectionHeader label="Main Course" count={mainSum} target={dinnerG}/>
+          {MAINS.map(m=><CourseLine key={m.id} item={m} val={course[m.id]} onChange={v=>upC(m.id,v)} max={dinnerG}/>)}
+        </div>
+        {showDes&&(
+          <div>
+            <SectionHeader label="Dessert" count={dessertSum} target={dinnerG}/>
+            {DINNER_DESSERTS.map(d=><CourseLine key={d.id} item={d} val={course[d.id]} onChange={v=>upC(d.id,v)} max={dinnerG}/>)}
+          </div>
+        )}
+        {sel.id==="l5"&&<DessertUpgradeBlock standalone={false}/>}
+      </div>
+    );
+  };
+
+  return(
+    <div style={{fontFamily:"system-ui,sans-serif",maxWidth:980,margin:"0 auto",padding:"20px 16px",color:"#111827"}}>
+      <div style={{marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div>
+          <h1 style={{margin:0,fontSize:21,fontWeight:800}}>Fröken Selfoss</h1>
+          <p style={{margin:"2px 0 0",color:"#6b7280",fontSize:13}}>Travel Agency Group Quote · <strong>{quoteRef}</strong></p>
+        </div>
+        <div style={{textAlign:"right",fontSize:12,color:"#6b7280",lineHeight:1.7}}>
+          <div style={{fontWeight:600,color:"#374151"}}>Selfoss, Iceland</div>
+          <div style={{color:"#d97706"}}>🏆 #1 TripAdvisor South Iceland 2024 & 2025</div>
+          <div style={{fontSize:11,color:dataSource==="live"?"#166534":"#9ca3af",marginTop:4}}>
+            {dataSource==="live"?"✓ Live prices from Google Sheets":"📋 Built-in prices"}
+          </div>
+        </div>
+      </div>
+
+      <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:10,padding:"14px 16px",marginBottom:20}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}}>
+          <div><LBL t="Travel Agency Name"/><input value={agency} onChange={e=>setAgency(e.target.value)} placeholder="e.g. Arctic Adventures" style={iS}/></div>
+          <div><LBL t="Contact Person / Email"/><input value={contact} onChange={e=>setContact(e.target.value)} placeholder="guide@agency.com" style={iS}/></div>
+          <div><LBL t="Tour / Group Reference"/><input value={tourRef2} onChange={e=>setTourRef2(e.target.value)} placeholder="e.g. NOR-2026-042" style={iS}/></div>
+          <div>
+            <LBL t="Booking Date"/>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={iS}/>
+            {date&&<div style={{fontSize:11,marginTop:3,fontWeight:600,color:disc?disc.color:"#6b7280"}}>{DAYS[new Date(date+"T12:00:00").getDay()]} · {disc?`${(disc.rate*100).toFixed(0)}% group discount`:""}</div>}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div>
+            <LBL t="Preferred Time"/>
+            <input type="time" value={time} onChange={e=>setTime(e.target.value)} style={iS}/>
+            {time?(timeWarn()?<div style={{fontSize:11,color:"#f59e0b",marginTop:3}}>⚠ Outside preferred window</div>:<div style={{fontSize:11,color:"#16a34a",marginTop:3}}>✓ Within preferred time window</div>):<div style={{fontSize:11,color:"#9ca3af",marginTop:3}}>Preferred: before 18:30 or after 20:00</div>}
+          </div>
+          <div>
+            <LBL t="Meal Type"/>
+            <div style={{display:"flex",gap:8,marginTop:4}}>
+              {["dinner","lunch"].map(t=>(
+                <button key={t} onClick={()=>{setMealType(t);setMenuId(t==="dinner"?"d2":"l1");resetMenu();}}
+                  style={{flex:1,padding:"7px 0",border:"1px solid",borderRadius:6,cursor:"pointer",fontSize:13,fontWeight:mealType===t?700:400,background:mealType===t?"#111827":"#fff",color:mealType===t?"#fff":"#374151",borderColor:mealType===t?"#111827":"#d1d5db",textTransform:"capitalize"}}>{t}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{background:"#111827",color:"#fff",borderRadius:10,padding:"14px 20px",marginBottom:20,display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
+        <div>
+          <div style={{fontSize:11,color:"#9ca3af",textTransform:"uppercase",letterSpacing:1}}>{isVariableMenu?"Est. Minimum":"Group Total"} (incl. VAT)</div>
+          <div style={{fontSize:22,fontWeight:800}}>{total>=(settings.min_group_size||10)?(isVariableMenu?"from ":"")+ISK(grand):"—"}</div>
+        </div>
+        {[
+          total>0&&{l:"Guests",v:`${total} (${adults} adults${ch511>0?`, ${ch511} ch.5–11`:""}${ch04>0?`, ${ch04} ch.0–4`:""})`},
+          rate>0&&{l:`Discount (${discLabel})`,v:`−${ISK(discAmt)}`,c:"#86efac"},
+          free>0&&{l:"Free Driver/Guide Meals",v:`🎁 ${free} · value ${ISK(freeVal)}`,c:"#fcd34d"},
+        ].filter(Boolean).map(({l,v,c})=>(
+          <div key={l} style={{borderLeft:"1px solid #374151",paddingLeft:18}}>
+            <div style={{fontSize:11,color:"#9ca3af",textTransform:"uppercase",letterSpacing:1}}>{l}</div>
+            <div style={{fontSize:13,fontWeight:600,color:c||"#fff"}}>{v}</div>
+          </div>
+        ))}
+        {!qualifies&&total>0&&<div style={{fontSize:12,color:"#fca5a5"}}>⚠ Minimum {settings.min_group_size} guests required</div>}
+        <button onClick={exportQuote} style={{marginLeft:"auto",padding:"8px 18px",background:"#fff",color:"#111827",border:"none",borderRadius:7,cursor:"pointer",fontSize:13,fontWeight:700}}>↓ Export & Send to Fröken</button>
+      </div>
+
+      <div style={{borderBottom:"1px solid #e5e7eb",marginBottom:20,display:"flex",overflowX:"auto"}}>
+        <TabBtn id="quote" lbl="Quote Builder"/>
+        <TabBtn id="menus" lbl="Menus & Pricing"/>
+        <TabBtn id="policy" lbl="Group Policy"/>
+      </div>
+
+      {tab==="quote"&&(
+        <div style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:20}}>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:14}}>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Menu Selection</div>
+              <LBL t="Menu (single choice for all guests)"/>
+              <select value={sel.id} onChange={e=>{setMenuId(e.target.value);resetMenu();}} style={iS}>
+                {curMenus.map(m=><option key={m.id} value={m.id}>{m.label} — {m.variablePrice?"from ":""}{ISK(m.price)}/person</option>)}
+              </select>
+              {sel.desc&&<div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>{sel.desc}</div>}
+              {isVariableMenu&&<div style={{marginTop:10,background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:6,padding:"10px 12px",fontSize:12,color:"#1e40af",lineHeight:1.7}}>
+                <strong>⚠ Variable price menu.</strong> Each guest chooses their own main with 48 hours notice. All guests receive complimentary lava cake.<br/>
+                <a href="https://frokenselfoss.is/pricing" target="_blank" style={{color:"#2563eb",fontWeight:600}}>View à la carte prices →</a>
+              </div>}
+              {mealType==="lunch"&&<div style={{marginTop:8,background:"#f0fdf4",border:"1px solid #86efac",borderRadius:6,padding:"7px 10px",fontSize:12,color:"#166534"}}>☕ Self-service filter coffee included with all lunch menus</div>}
+              {disc&&qualifies&&!isVariableMenu&&(
+                <div style={{display:"flex",gap:12,marginTop:10}}>
+                  <div style={{flex:1,background:"#fff",border:"1px solid #e5e7eb",borderRadius:6,padding:"8px 10px",textAlign:"center"}}>
+                    <div style={{fontSize:11,color:"#9ca3af"}}>Full price</div>
+                    <div style={{fontSize:14,fontWeight:700}}>{ISK(sel.price)}/pax</div>
+                  </div>
+                  <div style={{flex:1,background:rate===settings.discount_weekday?"#f0fdf4":"#fffbeb",border:`1px solid ${rate===settings.discount_weekday?"#86efac":"#fcd34d"}`,borderRadius:6,padding:"8px 10px",textAlign:"center"}}>
+                    <div style={{fontSize:11,color:"#6b7280"}}>Group rate ({(rate*100).toFixed(0)}% off)</div>
+                    <div style={{fontSize:14,fontWeight:700,color:rate===settings.discount_weekday?"#166534":"#92400e"}}>{ISK(sel.price*(1-rate))}/pax</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {showUpgrade&&sel.id!=="l5"&&qualifies&&<DessertUpgradeBlock standalone={true}/>}
+
+            <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:14}}>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Group Composition</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                {[
+                  {label:"Adults",val:adults,set:setAdults,note:`${ISK(sel.price*(1-rate))}/pax`},
+                  {label:"Children 5–11",val:ch511,set:setCh511,note:childrenAllowed?`${ISK(sel.price*0.5*(1-rate))}/pax (50% off)`:"Full price — Luxury Brunch only"},
+                  {label:"Children 0–4",val:ch04,set:setCh04,note:childrenAllowed?"Complimentary":"Full price — Luxury Brunch only",green:childrenAllowed},
+                ].map(({label,val,set,note,green})=>(
+                  <div key={label}>
+                    <LBL t={label}/>
+                    <div style={{display:"flex",alignItems:"center",border:"1px solid #d1d5db",borderRadius:6,overflow:"hidden",background:"#fff"}}>
+                      <button onClick={()=>set(v=>Math.max(0,v-1))} style={{padding:"5px 10px",border:"none",background:"#f9fafb",cursor:"pointer",fontSize:16,fontWeight:700,borderRight:"1px solid #e5e7eb"}}>−</button>
+                      <input type="number" min={0} value={val} onChange={e=>set(Math.max(0,parseInt(e.target.value)||0))} style={{border:"none",outline:"none",textAlign:"center",fontSize:15,fontWeight:700,flex:1,padding:"5px 0"}}/>
+                      <button onClick={()=>set(v=>v+1)} style={{padding:"5px 10px",border:"none",background:"#f9fafb",cursor:"pointer",fontSize:16,fontWeight:700,borderLeft:"1px solid #e5e7eb"}}>+</button>
+                    </div>
+                    <div style={{fontSize:11,color:green?"#16a34a":"#9ca3af",marginTop:3}}>{note}</div>
+                  </div>
+                ))}
+              </div>
+              {!qualifies&&total>0&&<div style={{marginTop:10,background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:6,padding:"8px 10px",fontSize:12,color:"#991b1b"}}>⚠ Minimum {settings.min_group_size} guests required.</div>}
+              {free>0&&<div style={{marginTop:10,background:"#f0fdf4",border:"1px solid #86efac",borderRadius:6,padding:"10px 12px",fontSize:12,color:"#166534"}}>🎁 <strong>{free} complimentary driver/guide meal{free>1?"s":""}</strong> for {freePax} paying guests <span style={{color:"#4ade80"}}>· value {ISK(freeVal)}</span></div>}
+            </div>
+
+            <CourseSection/>
+
+            <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:14}}>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:12}}>Add-Ons & Extras</div>
+              {showGenDessert&&(
+                <div style={{marginBottom:12,paddingBottom:12,borderBottom:"1px solid #e5e7eb"}}>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13}}>
+                    <input type="checkbox" checked={addDessert} onChange={e=>setAddDessert(e.target.checked)}/>
+                    <span style={{fontWeight:600}}>Add Dessert</span>
+                    <span style={{color:"#9ca3af",fontSize:11}}>{ISK(1100)}/person</span>
+                  </label>
+                  {addDessert&&<div style={{paddingLeft:20,marginTop:8,borderLeft:"2px solid #e5e7eb"}}>
+                    <LBL t={`Pax (default: ${adults+(childrenAllowed?ch511:0)})`}/>
+                    <input type="number" min={0} value={dessertPax} onChange={e=>setDessertPax(e.target.value)} placeholder={String(adults+(childrenAllowed?ch511:0))} style={{...iS,width:100}}/>
+                  </div>}
+                </div>
+              )}
+              <div style={{marginBottom:12,paddingBottom:12,borderBottom:"1px solid #e5e7eb"}}>
+                <div style={{fontWeight:600,fontSize:13,marginBottom:8}}>Pre-Order First Round Drinks</div>
+                {drinkItems.map(d=>(
+                  <div key={d.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,fontSize:13}}>
+                    <span>{d.label} <span style={{color:"#9ca3af",fontSize:11}}>— {ISK(d.price)}</span></span>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <button onClick={()=>setDrinkQty(d.id,(drinksQty[d.id]||0)-1)} style={{width:26,height:26,border:"1px solid #d1d5db",borderRadius:5,background:"#fff",cursor:"pointer",fontWeight:700}}>−</button>
+                      <span style={{width:28,textAlign:"center",fontWeight:700}}>{drinksQty[d.id]||0}</span>
+                      <button onClick={()=>setDrinkQty(d.id,(drinksQty[d.id]||0)+1)} style={{width:26,height:26,border:"1px solid #d1d5db",borderRadius:5,background:"#fff",cursor:"pointer",fontWeight:700}}>+</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginBottom:12,paddingBottom:12,borderBottom:"1px solid #e5e7eb"}}>
+                <div style={{fontWeight:600,fontSize:13,marginBottom:2}}>Drink Vouchers</div>
+                <div style={{fontSize:11,color:"#9ca3af",marginBottom:8}}>Minimum 10 vouchers · priced per voucher</div>
+                {voucherItems.map(v=>(
+                  <div key={v.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,fontSize:13}}>
+                    <span>{v.label} <span style={{color:"#9ca3af",fontSize:11}}>— {ISK(v.price)}/voucher · min. 10</span></span>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <button onClick={()=>setVouchQty(v.id,(vouchersQty[v.id]||0)===10?0:Math.max(0,(vouchersQty[v.id]||0)-10))} style={{width:26,height:26,border:"1px solid #d1d5db",borderRadius:5,background:"#fff",cursor:"pointer",fontWeight:700}}>−</button>
+                      <span style={{width:36,textAlign:"center",fontWeight:700}}>{vouchersQty[v.id]||"—"}</span>
+                      <button onClick={()=>setVouchQty(v.id,(vouchersQty[v.id]||0)+10)} style={{width:26,height:26,border:"1px solid #d1d5db",borderRadius:5,background:"#fff",cursor:"pointer",fontWeight:700}}>+</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {cakeItem&&<label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13}}>
+                <input type="checkbox" checked={cakeEnabled} onChange={e=>setCakeEnabled(e.target.checked)}/>
+                <span style={{fontWeight:600}}>Birthday Cake</span>
+                <span style={{color:"#9ca3af",fontSize:11}}>{cakeItem.note} · {ISK(cakeItem.price)}</span>
+              </label>}
+            </div>
+
+            <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:14}}>
+              <div style={{fontWeight:700,fontSize:13,marginBottom:10}}>Notes & Dietary Requirements</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div><LBL t="Allergies (notify 24h before)"/><textarea value={allergy} onChange={e=>setAllergy(e.target.value)} rows={3} placeholder="e.g. 2× gluten-free" style={{...iS,resize:"vertical"}}/></div>
+                <div><LBL t="Internal notes"/><textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3} placeholder="e.g. coach from Reykjavík" style={{...iS,resize:"vertical"}}/></div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:10,padding:16,position:"sticky",top:20}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Quote Breakdown</div>
+              {total===0?<div style={{color:"#9ca3af",fontSize:13}}>Enter guest numbers to see your quote.</div>:!qualifies?(
+                <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:6,padding:12,fontSize:13,color:"#991b1b"}}>Minimum {settings.min_group_size} guests required.</div>
+              ):(
+                <>
+                  <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:7,padding:"10px 12px",marginBottom:14}}>
+                    <div style={{fontWeight:600,fontSize:13}}>{sel.label}</div>
+                    <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{sel.desc}</div>
+                  </div>
+                  <div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:.5,marginBottom:6}}>Guest Costs</div>
+                  {adults>0&&<Row l={`${adults} adults × ${ISK(sel.price)}`} v={ISK(adultBase)}/>}
+                  {ch511>0&&<Row l={`${ch511} children 5–11 × ${ISK(childrenAllowed?sel.price*0.5:sel.price)}`} v={ISK(childBase)}/>}
+                  {ch04>0&&childrenAllowed&&<Row l={`${ch04} children 0–4`} v="FREE" green/>}
+                  {ch04>0&&!childrenAllowed&&<Row l={`${ch04} children 0–4 × ${ISK(sel.price)}`} v={ISK(ch04*sel.price)}/>}
+                  <Row l="Subtotal" v={ISK(base)} bold/>
+                  {rate>0&&<><Row l={`Discount – ${discLabel} (${(rate*100).toFixed(0)}%)`} v={`−${ISK(discAmt)}`} green/><Row l="After discount" v={ISK(afterDisc)} bold/></>}
+                  {free>0&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:6,padding:"8px 10px",margin:"10px 0 6px",fontSize:12,color:"#166534"}}>🎁 <strong>{free} free driver/guide meal{free>1?"s":""}</strong><div style={{color:"#4ade80",marginTop:2}}>Value: {ISK(freeVal)}</div></div>}
+                  {addOns>0&&<>
+                    <div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:.5,margin:"12px 0 6px"}}>Add-Ons</div>
+                    {upgEnabled&&upgPaxN>0&&<Row l={`Dessert upgrade ×${upgPaxN}`} v={ISK(upgTotal)}/>}
+                    {addDessert&&dpax>0&&<Row l={`Dessert add-on ×${dpax}`} v={ISK(dessertTotal)}/>}
+                    {drinkItems.filter(d=>(drinksQty[d.id]||0)>0).map(d=><Row key={d.id} l={`${d.label} ×${drinksQty[d.id]}`} v={ISK((drinksQty[d.id]||0)*d.price)}/>)}
+                    {voucherItems.filter(v=>(vouchersQty[v.id]||0)>0).map(v=><Row key={v.id} l={`${v.label} ×${vouchersQty[v.id]}`} v={ISK((vouchersQty[v.id]||0)*v.price)}/>)}
+                    {cakeEnabled&&<Row l="Birthday Cake" v={ISK(cakeTotal)}/>}
+                    <Row l="Add-ons total" v={ISK(addOns)} bold/>
+                  </>}
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0 4px",fontSize:17,fontWeight:800,borderTop:"2px solid #d1d5db",marginTop:8}}>
+                    <span>Grand Total</span><span>{ISK(grand)}</span>
+                  </div>
+                  {adults+(childrenAllowed?ch511:0)>0&&<div style={{fontSize:12,color:"#6b7280",textAlign:"right",marginTop:4}}>{ISK(Math.round(grand/(adults+(childrenAllowed?ch511:0))))} per paying guest</div>}
+                  {rate>0&&<div style={{fontSize:12,color:"#16a34a",textAlign:"right",marginTop:2}}>You saved {ISK(discAmt)}</div>}
+                  <div style={{marginTop:10,background:"#fffbeb",border:"1px solid #fcd34d",borderRadius:6,padding:"10px 12px",fontSize:11,color:"#92400e",lineHeight:1.7}}>
+                    <strong>All prices include VAT.</strong> Final count confirmed 24h before. Allergies 24h in advance.
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab==="menus"&&(
+        <div>
+          {[["Dinner Menus","dinner"],["Lunch Menus","lunch"]].map(([title,cat])=>{
+            const list=menus.filter(m=>m.category===cat);
+            return(
+              <div key={cat} style={{marginBottom:32}}>
+                <h3 style={{margin:"0 0 12px",fontSize:15,fontWeight:700,borderBottom:"2px solid #e5e7eb",paddingBottom:6}}>{title}</h3>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr>{[["Menu",false],["Includes",false],["Full Price",true],["Sun–Thu",true],["Fri–Sat",true]].map(([h,r])=><th key={h} style={thS(r)}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {list.map(m=>(
+                      <tr key={m.id} style={{cursor:"pointer"}} onClick={()=>{setMealType(cat);setMenuId(m.id);resetMenu();setTab("quote");}} onMouseEnter={e=>e.currentTarget.style.background="#f9fafb"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                        <td style={tdS(false)}><span style={{fontWeight:600}}>{m.label}</span>
+                          {m.id==="l6"&&<span style={{marginLeft:6,fontSize:10,background:"#eff6ff",color:"#1d4ed8",padding:"1px 5px",borderRadius:3}}>children's discounts</span>}
+                          {m.variablePrice&&<span style={{marginLeft:6,fontSize:10,background:"#fffbeb",color:"#92400e",padding:"1px 5px",borderRadius:3}}>variable price</span>}
+                          {["d1","d2","l5"].includes(m.id)&&<span style={{marginLeft:6,fontSize:10,background:"#f0fdf4",color:"#166534",padding:"1px 5px",borderRadius:3}}>course selection</span>}
+                          {["d3","l1"].includes(m.id)&&<span style={{marginLeft:6,fontSize:10,background:"#faf5ff",color:"#7c3aed",padding:"1px 5px",borderRadius:3}}>+dessert upgrade</span>}
+                        </td>
+                        <td style={{...tdS(false),color:"#6b7280",fontSize:12}}>{m.desc}</td>
+                        <td style={tdS(true)}>{m.variablePrice?"from ":""}{ISK(m.price)}</td>
+                        <td style={{...tdS(true),color:"#166534",fontWeight:600}}>{ISK(m.price*(1-settings.discount_weekday))}</td>
+                        <td style={{...tdS(true),color:"#d97706",fontWeight:600}}>{ISK(m.price*(1-settings.discount_weekend))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {cat==="lunch"&&<p style={{fontSize:12,color:"#166534",marginTop:8}}>☕ Self-service filter coffee included with all lunch menus</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {tab==="policy"&&(
+        <div style={{maxWidth:700,fontSize:14,lineHeight:1.8,color:"#374151"}}>
+          {[
+            {n:"1. Group Menu Requirements",c:<p>Group menus cater to <strong>10–70 guests</strong> with a single menu choice for all. Final selection confirmed <strong>24 hours in advance</strong>.</p>},
+            {n:"2. Group Discounts",c:<><p><strong>{(settings.discount_weekday*100).toFixed(0)}% discount</strong> — Sunday through Thursday</p><p><strong>{(settings.discount_weekend*100).toFixed(0)}% discount</strong> — Friday &amp; Saturday</p></>},
+            {n:"3. Children's Discounts",c:<p>Only apply to <strong>Luxury Brunch Buffet (Menu #6)</strong>. Ages 0–4: complimentary. Ages 5–11: 50% off. Ages 12+: full rate.</p>},
+            {n:"4. Complimentary Driver/Guide Meals",c:<p>12–19 guests: 1 free. 20–29 guests: 2 free. 30+: +1 per additional 10 guests.</p>},
+            {n:"5. Booking Times",c:<p>Preferred: <strong>before 18:30</strong> or <strong>after 20:00</strong>.</p>},
+            {n:"6. Allergies",c:<p>Notify <strong>24 hours in advance</strong>.</p>},
+            {n:"7. Payment",c:<p>At the restaurant or via secure payment link. Automatic billing for Icelandic-registered companies.</p>},
+            {n:"8. Cancellation",c:<p>Minimum <strong>6 hours' notice</strong> for no-shows. Each case handled individually.</p>},
+          ].map(({n,c})=>(<div key={n} style={{marginBottom:22}}><h3 style={{margin:"0 0 6px",fontSize:15,fontWeight:700,color:"#111827"}}>{n}</h3>{c}</div>))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
